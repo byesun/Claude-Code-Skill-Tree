@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+build/
+dist/
+*.spec.bak
+
+# PyInstaller output
+claude-code-interface/claude-skill-launcher/dist/
+claude-code-interface/claude-skill-launcher/build/
+
+# Node / Next.js (design prototype under claude-code-interface/)
+node_modules/
+.next/
+out/
+.env*.local
+
+# Claude Code local settings (machine-specific, not for sharing)
+.claude/settings.local.json
+
+# OS
+.DS_Store
+Thumbs.db

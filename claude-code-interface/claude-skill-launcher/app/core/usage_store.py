@@ -10,6 +10,7 @@ from app.config import log, usage_file
 
 SCHEMA_VERSION = 1
 RECENT_LIMIT = 12
+INPUT_HISTORY_LIMIT = 8
 
 
 class UsageStore:
@@ -73,6 +74,10 @@ class UsageStore:
         entry = self._data["skills"].get(key) or {}
         return str(entry.get("last_input", "") or "")
 
+    def input_history(self, key: str) -> list[str]:
+        entry = self._data["skills"].get(key) or {}
+        return [str(x) for x in entry.get("input_history", []) or []]
+
     def is_favorite(self, key: str) -> bool:
         return key in self._data["favorites"]
 
@@ -89,11 +94,33 @@ class UsageStore:
         entry["last_used"] = datetime.now().isoformat(timespec="seconds")
         entry["last_input"] = user_input
 
+        if user_input.strip():
+            history = [str(x) for x in entry.get("input_history", []) or []]
+            if user_input in history:
+                history.remove(user_input)
+            history.insert(0, user_input)
+            entry["input_history"] = history[:INPUT_HISTORY_LIMIT]
+
         recent = self._data["recent"]
         if key in recent:
             recent.remove(key)
         recent.insert(0, key)
         del recent[RECENT_LIMIT:]
+        self.save()
+
+    def reset_all(self) -> None:
+        """사용 횟수/최근 사용/입력 히스토리를 전부 초기화한다. 즐겨찾기는 수동
+        큐레이션이라 통계 초기화와 별개로 취급해 건드리지 않는다."""
+        self._data["skills"] = {}
+        self._data["recent"] = []
+        self.save()
+
+    def reset_skill(self, key: str) -> None:
+        """특정 스킬의 사용 기록만 지운다(즐겨찾기 여부는 유지)."""
+        self._data["skills"].pop(key, None)
+        recent = self._data["recent"]
+        if key in recent:
+            recent.remove(key)
         self.save()
 
     def toggle_favorite(self, key: str) -> bool:

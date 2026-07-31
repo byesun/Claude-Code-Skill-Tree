@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
+    QComboBox,
     QFrame,
     QHBoxLayout,
     QLabel,
-    QLineEdit,
     QPushButton,
     QVBoxLayout,
     QWidget,
@@ -21,6 +21,7 @@ class DetailPanel(QFrame):
     input_changed = pyqtSignal(str)
     open_file_requested = pyqtSignal(object)
     open_folder_requested = pyqtSignal(object)
+    preview_requested = pyqtSignal(object)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -70,10 +71,12 @@ class DetailPanel(QFrame):
         input_label.setProperty("role", "muted")
         root.addWidget(input_label)
 
-        self._input = QLineEdit()
-        self._input.setPlaceholderText("예: 이 폴더의 PDF 를 표로 정리해줘")
-        self._input.textChanged.connect(self.input_changed.emit)
-        self._input.returnPressed.connect(self._emit_run)
+        self._input = QComboBox()
+        self._input.setEditable(True)
+        self._input.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+        self._input.lineEdit().setPlaceholderText("예: 이 폴더의 PDF 를 표로 정리해줘")
+        self._input.editTextChanged.connect(self.input_changed.emit)
+        self._input.lineEdit().returnPressed.connect(self._emit_run)
         root.addWidget(self._input)
 
         preview_label = QLabel("전송될 명령")
@@ -96,6 +99,13 @@ class DetailPanel(QFrame):
         )
         buttons.addWidget(self._open_md)
 
+        self._preview_btn = QPushButton("미리보기")
+        self._preview_btn.setEnabled(False)
+        self._preview_btn.clicked.connect(
+            lambda: self._skill and self.preview_requested.emit(self._skill)
+        )
+        buttons.addWidget(self._preview_btn)
+
         self._run = QPushButton("실행")
         self._run.setProperty("variant", "primary")
         self._run.setEnabled(False)
@@ -107,7 +117,12 @@ class DetailPanel(QFrame):
 
     # ------------------------------------------------------------------- public
 
-    def set_skill(self, skill: Skill | None, use_count: int = 0, last_input: str = "") -> None:
+    def set_skill(
+        self,
+        skill: Skill | None,
+        use_count: int = 0,
+        history: list[str] | None = None,
+    ) -> None:
         self._skill = skill
         self._clear_tools()
 
@@ -119,6 +134,7 @@ class DetailPanel(QFrame):
             self._tools_label.hide()
             self._run.setEnabled(False)
             self._open_md.setEnabled(False)
+            self._preview_btn.setEnabled(False)
             self._preview.setText("-")
             return
 
@@ -143,9 +159,14 @@ class DetailPanel(QFrame):
         else:
             self._tools_label.hide()
 
-        self._input.setText(last_input)
+        self._input.blockSignals(True)
+        self._input.clear()
+        self._input.addItems(history or [])
+        self._input.setCurrentText((history or [""])[0])
+        self._input.blockSignals(False)
         self._run.setEnabled(True)
         self._open_md.setEnabled(True)
+        self._preview_btn.setEnabled(True)
 
     def set_preview(self, text: str) -> None:
         self._preview.setText(text or "-")
@@ -154,7 +175,7 @@ class DetailPanel(QFrame):
         self._run.setEnabled(enabled and self._skill is not None)
 
     def user_input(self) -> str:
-        return self._input.text()
+        return self._input.currentText()
 
     def focus_input(self) -> None:
         self._input.setFocus()

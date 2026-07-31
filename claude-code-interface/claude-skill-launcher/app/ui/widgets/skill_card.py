@@ -16,6 +16,8 @@ from PyQt6.QtWidgets import (
 from app.models import Skill
 
 DESC_CHAR_LIMIT = 96
+CARD_FIXED_HEIGHT = 150
+DESC_FIXED_HEIGHT = 54  # 3줄 분량. 카드 높이를 내용과 무관하게 고정하기 위함.
 
 
 def _truncate(text: str, limit: int = DESC_CHAR_LIMIT) -> str:
@@ -40,9 +42,8 @@ class SkillCard(QFrame):
         self.setObjectName("SkillCard")
         self.setProperty("selected", "false")
         self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        self.setMaximumWidth(440)
-        self.setMinimumHeight(116)
+        self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        self.setFixedHeight(CARD_FIXED_HEIGHT)
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.customContextMenuRequested.connect(
             lambda pos: self.context_requested.emit(self.skill, self.mapToGlobal(pos))
@@ -70,6 +71,8 @@ class SkillCard(QFrame):
         desc = QLabel(_truncate(skill.description) or "설명 없음")
         desc.setProperty("role", "muted")
         desc.setWordWrap(True)
+        desc.setFixedHeight(DESC_FIXED_HEIGHT)
+        desc.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
         desc.setToolTip(skill.description or "설명 없음")
         root.addWidget(desc)
 

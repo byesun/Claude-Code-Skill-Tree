@@ -26,6 +26,27 @@ DARK = {
     "font_mono": '"Cascadia Mono", Consolas, "D2Coding", monospace',
 }
 
+LIGHT = {
+    # DARK와 동일한 Tailwind slate/green 팔레트를 라이트 배경으로 반전한 버전.
+    "bg": "#F8FAFC",
+    "surface": "#FFFFFF",
+    "surface_hi": "#F1F5F9",
+    "border": "#E2E8F0",
+    "fg": "#0F172A",
+    "fg_muted": "#64748B",
+    "accent": "#16A34A",
+    "accent_hover": "#22C55E",
+    "accent_fg": "#FFFFFF",
+    "success": "#16A34A",
+    "danger": "#DC2626",
+    "radius": "10px",
+    "radius_sm": "6px",
+    "font_ui": '"Inter", "Segoe UI Variable", "Segoe UI", "Malgun Gothic", sans-serif',
+    "font_mono": '"Cascadia Mono", Consolas, "D2Coding", monospace',
+}
+
+THEMES = {"dark": DARK, "light": LIGHT}
+
 _QSS = """
 * {
     font-family: {font_ui};

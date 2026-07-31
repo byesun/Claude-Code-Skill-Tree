@@ -6,7 +6,7 @@ import os
 import subprocess
 from pathlib import Path
 
-from PyQt6.QtCore import QPoint, Qt
+from PyQt6.QtCore import QEvent, QPoint, Qt
 from PyQt6.QtGui import QAction, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
     QApplication,
@@ -18,6 +18,7 @@ from PyQt6.QtWidgets import (
     QLineEdit,
     QMainWindow,
     QMenu,
+    QMessageBox,
     QPushButton,
     QVBoxLayout,
     QWidget,
@@ -28,9 +29,10 @@ from app.controller import AppController
 from app.core.hotkey import GlobalHotkey
 from app.models import ConsoleTarget, InjectResult, Skill
 from app.ui.settings_dialog import SettingsDialog
-from app.ui.theme import stylesheet
+from app.ui.theme import DARK, THEMES, stylesheet
 from app.ui.widgets.console_bar import ConsoleBar
 from app.ui.widgets.detail_panel import DetailPanel
+from app.ui.widgets.preview_dialog import SkillPreviewDialog
 from app.ui.widgets.skill_grid import SkillGrid
 from app.ui.widgets.toast import Toast
 
@@ -53,12 +55,13 @@ class MainWindow(QMainWindow):
         self.setWindowTitle(f"{APP_TITLE} {APP_VERSION}")
         self.resize(1100, 720)
         self.setMinimumSize(880, 560)
-        self.setStyleSheet(stylesheet())
+        self.setStyleSheet(stylesheet(THEMES.get(controller.settings.theme, DARK)))
         if controller.settings.always_on_top:
             self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
 
         self._filter = "all"
         self._selected: Skill | None = None
+        self._broadcast = False
 
         self._build_ui()
         self._wire_controller()
@@ -135,6 +138,7 @@ class MainWindow(QMainWindow):
         self.search.setPlaceholderText("스킬 검색  (Ctrl+F)")
         self.search.setClearButtonEnabled(True)
         self.search.textChanged.connect(lambda _t: self._render_skills())
+        self.search.installEventFilter(self)
         layout.addWidget(self.search)
 
         self.grid = SkillGrid()
@@ -172,11 +176,14 @@ class MainWindow(QMainWindow):
         self.console_bar.refresh_requested.connect(self._refresh_all)
         self.console_bar.open_console_requested.connect(self._open_new_console)
         self.console_bar.settings_requested.connect(self._open_settings)
+        self.console_bar.broadcast_toggled.connect(self._on_broadcast_toggled)
+        c.broadcast_finished.connect(self._on_broadcast_finished)
 
         self.detail.run_requested.connect(self._run_skill)
         self.detail.input_changed.connect(lambda _t: self._update_preview())
         self.detail.open_file_requested.connect(lambda s: self._open_path(s.path))
         self.detail.open_folder_requested.connect(lambda s: self._open_path(s.root))
+        self.detail.preview_requested.connect(self._open_preview)
 
     def _install_shortcuts(self) -> None:
         QShortcut(QKeySequence("Ctrl+F"), self, lambda: self.search.setFocus())
@@ -227,7 +234,7 @@ class MainWindow(QMainWindow):
             self.detail.set_skill(None)
         else:
             usage = self.controller.usage
-            self.detail.set_skill(skill, usage.count(skill.key), usage.last_input(skill.key))
+            self.detail.set_skill(skill, usage.count(skill.key), usage.input_history(skill.key))
         self._update_preview()
         self.detail.set_run_enabled(self.controller.active_console is not None)
 
@@ -280,6 +287,11 @@ class MainWindow(QMainWindow):
         copy.triggered.connect(lambda: self._copy_command(skill))
         menu.addAction(copy)
 
+        menu.addSeparator()
+        reset = QAction("사용 기록 삭제", menu)
+        reset.triggered.connect(lambda: self._reset_skill_usage(skill))
+        menu.addAction(reset)
+
         menu.exec(pos)
 
     # -------------------------------------------------------------------- 액션
@@ -289,7 +301,22 @@ class MainWindow(QMainWindow):
             self._run_skill(self._selected, self.detail.user_input())
 
     def _run_skill(self, skill: Skill, user_input: str) -> None:
-        self.controller.run_skill(skill, user_input)
+        if self._broadcast:
+            self.controller.run_skill_broadcast(skill, user_input)
+        else:
+            self.controller.run_skill(skill, user_input)
+
+    def _on_broadcast_toggled(self, enabled: bool) -> None:
+        self._broadcast = enabled
+
+    def _on_broadcast_finished(self, ok_count: int, total: int, failures: list) -> None:
+        if total == 0:
+            self.toast.show_message("감지된 콘솔이 없습니다.", "error", 3000)
+            return
+        tone = "success" if ok_count == total else "error"
+        self.toast.show_message(f"{ok_count}/{total}개 콘솔에 전송 완료", tone, 3000)
+        if failures:
+            self.status.setText(failures[0])
 
     def _refresh_all(self) -> None:
         self.controller.refresh_consoles()
@@ -306,6 +333,20 @@ class MainWindow(QMainWindow):
         else:
             self.toast.show_message("CMD 실행에 실패했습니다.", "error")
 
+    def _open_preview(self, skill: Skill) -> None:
+        SkillPreviewDialog(skill, self).exec()
+
+    def _reset_skill_usage(self, skill: Skill) -> None:
+        confirm = QMessageBox.question(
+            self,
+            "사용 기록 삭제",
+            f"'{skill.name}' 스킬의 사용 횟수·입력 히스토리를 삭제할까요?",
+        )
+        if confirm != QMessageBox.StandardButton.Yes:
+            return
+        self.controller.reset_skill_usage(skill)
+        self.toast.show_message(f"'{skill.name}' 사용 기록을 삭제했습니다.", "success", 1800)
+
     def _copy_command(self, skill: Skill) -> None:
         from PyQt6.QtWidgets import QApplication
 
@@ -314,10 +355,11 @@ class MainWindow(QMainWindow):
         self.toast.show_message("명령을 클립보드에 복사했습니다.", "success", 1800)
 
     def _open_settings(self) -> None:
-        dialog = SettingsDialog(self.controller.settings, self)
+        dialog = SettingsDialog(self.controller.settings, self.controller.usage, self)
         if dialog.exec() != SettingsDialog.DialogCode.Accepted:
             return
         dialog.apply()
+        self.setStyleSheet(stylesheet(THEMES.get(self.controller.settings.theme, DARK)))
 
         self.setWindowFlag(
             Qt.WindowType.WindowStaysOnTopHint, self.controller.settings.always_on_top
@@ -351,6 +393,16 @@ class MainWindow(QMainWindow):
             self.toast.show_message(f"열 수 없습니다: {path}", "error")
 
     # ------------------------------------------------------------------ 이벤트
+
+    def eventFilter(self, obj, event) -> bool:
+        if (
+            obj is self.search
+            and event.type() == QEvent.Type.KeyPress
+            and event.key() == Qt.Key.Key_Down
+        ):
+            self.grid.focus_first_or_selected()
+            return True
+        return super().eventFilter(obj, event)
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)

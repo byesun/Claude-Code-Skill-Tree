@@ -50,6 +50,7 @@ class AppController(QObject):
     active_console_changed = pyqtSignal(object)  # ConsoleTarget | None
     inject_finished = pyqtSignal(object)  # InjectResult
     status_changed = pyqtSignal(str)
+    broadcast_finished = pyqtSignal(int, int, list)  # ok_count, total, failure_messages
 
     def __init__(self) -> None:
         super().__init__()
@@ -91,6 +92,10 @@ class AppController(QObject):
     @property
     def active_console(self) -> ConsoleTarget | None:
         return self._active
+
+    @property
+    def console_targets(self) -> list[ConsoleTarget]:
+        return list(self._console_list)
 
     def set_active_console(self, target: ConsoleTarget | None) -> None:
         previous_cwd = self._active.cwd if self._active else None
@@ -153,6 +158,36 @@ class AppController(QObject):
         self.inject_finished.emit(result)
         return result
 
+    def run_skill_broadcast(self, skill: Skill, user_input: str = "") -> None:
+        """감지된 모든 콘솔에 순차적으로 같은 명령을 전송한다.
+
+        Injector.inject() 는 호출마다 포커스 확보→전송까지 동기적으로 완전히
+        끝나고 락을 반환하므로, 같은 스레드에서 순차 호출해도 안전하다(별도
+        스레드 불필요). 사용 횟수는 콘솔별이 아니라 스킬 실행 1회로 집계한다."""
+        targets = list(self._console_list)
+        if not targets:
+            self.broadcast_finished.emit(0, 0, ["감지된 콘솔이 없습니다."])
+            return
+
+        command = build_command(skill, user_input, self.settings.default_template)
+        ok_count = 0
+        failures: list[str] = []
+        for target in targets:
+            if not self.consoles.is_window_alive(target.hwnd):
+                failures.append(f"{target.title}: 창이 닫혔습니다.")
+                continue
+            result = self.injector.inject(target, command)
+            if result.ok:
+                ok_count += 1
+            else:
+                failures.append(f"{target.title}: {result.message}")
+
+        if ok_count:
+            self.usage.record_use(skill.key, user_input)
+            self.skills_changed.emit(self._skills)
+
+        self.broadcast_finished.emit(ok_count, len(targets), failures)
+
     def preview_command(self, skill: Skill, user_input: str = "") -> str:
         return build_command(skill, user_input, self.settings.default_template)
 
@@ -160,6 +195,16 @@ class AppController(QObject):
         state = self.usage.toggle_favorite(skill.key)
         self.skills_changed.emit(self._skills)
         return state
+
+    def reset_usage(self) -> None:
+        """전체 사용 기록(횟수/최근/입력 히스토리) 초기화. 즐겨찾기는 유지."""
+        self.usage.reset_all()
+        self.skills_changed.emit(self._skills)
+
+    def reset_skill_usage(self, skill: Skill) -> None:
+        """특정 스킬 하나의 사용 기록만 초기화."""
+        self.usage.reset_skill(skill.key)
+        self.skills_changed.emit(self._skills)
 
     # ----------------------------------------------------------------- private
 

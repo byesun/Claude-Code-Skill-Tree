@@ -15,6 +15,7 @@ from PyQt6.QtWidgets import (
     QLabel,
     QLineEdit,
     QListWidget,
+    QMessageBox,
     QPushButton,
     QSpinBox,
     QVBoxLayout,
@@ -22,6 +23,7 @@ from PyQt6.QtWidgets import (
 )
 
 from app.config import DEFAULT_TEMPLATE, Settings
+from app.core.usage_store import UsageStore
 from app.models import InjectStrategy
 
 STRATEGY_LABELS = {
@@ -37,11 +39,17 @@ SORT_LABELS = {
     "name": "이름",
 }
 
+THEME_LABELS = {
+    "dark": "다크 (기본)",
+    "light": "라이트",
+}
+
 
 class SettingsDialog(QDialog):
-    def __init__(self, settings: Settings, parent=None):
+    def __init__(self, settings: Settings, usage: UsageStore, parent=None):
         super().__init__(parent)
         self.settings = settings
+        self.usage = usage
         self.setWindowTitle("설정")
         self.setMinimumWidth(440)
 
@@ -85,6 +93,12 @@ class SettingsDialog(QDialog):
         self._sort_mode.setCurrentIndex(self._sort_mode.findData(settings.sort_mode))
         form.addRow("정렬 기준", self._sort_mode)
 
+        self._theme = QComboBox()
+        for key, label in THEME_LABELS.items():
+            self._theme.addItem(label, key)
+        self._theme.setCurrentIndex(self._theme.findData(settings.theme))
+        form.addRow("테마", self._theme)
+
         self._always_on_top = QCheckBox("창을 항상 위에 표시")
         self._always_on_top.setChecked(settings.always_on_top)
         form.addRow("", self._always_on_top)
@@ -109,6 +123,14 @@ class SettingsDialog(QDialog):
         roots_buttons.addStretch(1)
         root.addLayout(roots_buttons)
 
+        reset_row = QHBoxLayout()
+        reset_usage_btn = QPushButton("사용 기록 초기화")
+        reset_usage_btn.setToolTip("사용 횟수·최근 사용·추가 지시문 히스토리를 모두 지웁니다 (즐겨찾기는 유지)")
+        reset_usage_btn.clicked.connect(self._reset_usage)
+        reset_row.addWidget(reset_usage_btn)
+        reset_row.addStretch(1)
+        root.addLayout(reset_row)
+
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
         )
@@ -127,6 +149,18 @@ class SettingsDialog(QDialog):
         for item in self._roots_list.selectedItems():
             self._roots_list.takeItem(self._roots_list.row(item))
 
+    def _reset_usage(self) -> None:
+        confirm = QMessageBox.question(
+            self,
+            "사용 기록 초기화",
+            "사용 횟수, 최근 사용, 추가 지시문 히스토리를 모두 지웁니다.\n"
+            "즐겨찾기는 유지됩니다. 계속할까요?",
+        )
+        if confirm != QMessageBox.StandardButton.Yes:
+            return
+        self.usage.reset_all()
+        QMessageBox.information(self, "사용 기록 초기화", "초기화했습니다.")
+
     # -------------------------------------------------------------------- public
 
     def apply(self) -> None:
@@ -138,6 +172,7 @@ class SettingsDialog(QDialog):
         s.focus_delay_ms = self._focus_delay.value()
         s.default_template = self._template.text()
         s.sort_mode = self._sort_mode.currentData()
+        s.theme = self._theme.currentData()
         s.always_on_top = self._always_on_top.isChecked()
         s.hotkey_enabled = self._hotkey_enabled.isChecked()
         s.extra_roots = [

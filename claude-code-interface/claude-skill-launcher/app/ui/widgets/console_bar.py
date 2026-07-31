@@ -15,6 +15,7 @@ class ConsoleBar(QFrame):
     refresh_requested = pyqtSignal()
     open_console_requested = pyqtSignal()
     settings_requested = pyqtSignal()
+    broadcast_toggled = pyqtSignal(bool)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -35,6 +36,13 @@ class ConsoleBar(QFrame):
         self._combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
         self._combo.currentIndexChanged.connect(self._on_index_changed)
         layout.addWidget(self._combo, 1)
+
+        self._broadcast = QPushButton("전체 전송")
+        self._broadcast.setCheckable(True)
+        self._broadcast.setProperty("variant", "ghost")
+        self._broadcast.setToolTip("켜면 콤보박스 선택과 무관하게 감지된 모든 콘솔에 동시 전송합니다")
+        self._broadcast.toggled.connect(self.broadcast_toggled.emit)
+        layout.addWidget(self._broadcast)
 
         self._dot = QLabel(DOT)
         self._dot.setProperty("role", "dot")

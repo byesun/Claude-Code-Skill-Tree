@@ -140,6 +140,14 @@ class Settings:
 
     # --- UI ---
     @property
+    def theme(self) -> str:
+        return self._s.value("ui/theme", "dark", str)
+
+    @theme.setter
+    def theme(self, value: str) -> None:
+        self._s.setValue("ui/theme", value)
+
+    @property
     def sort_mode(self) -> str:
         return self._s.value("ui/sort", "favorite", str)
 
